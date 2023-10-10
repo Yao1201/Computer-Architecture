@@ -27,7 +27,7 @@ main:
     lw s4, len
     add s5, x0, x0    #s5=0 transfer counter
     jal x_fp32tobf16    #transfer to bf16
-    jal y_fp32tobf16
+    jal h_fp32tobf16
     la a0, str1
     li a7, 4
     ecall
@@ -74,7 +74,7 @@ x_fp32tobf16:
     addi s5, x0, 0
     ret
 #-----------------------------------------------------------#
-y_fp32tobf16:
+h_fp32tobf16:
     lw a2,0(s2)
     addi s2, s2, 4    #x[] next element
     li t0, 0x7F800000    #t0=0x7F800000
@@ -101,7 +101,7 @@ y_fp32tobf16:
     addi a3, a3, 4
 
     addi s5, s5, 1    #counter++
-    blt s5, s4, y_fp32tobf16    #counter< 3 loop
+    blt s5, s4, h_fp32tobf16    #counter< 3 loop
     addi a3, a3, -24    #correction a3
     ret
 eqzero:
