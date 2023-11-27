@@ -1,11 +1,19 @@
+.global _start1
+#newlib system calls 
+.set SYSEXIT,  93
+.set SYSWRITE, 64
+.set SYSINT, 11
 .data
     test_data_1: .dword 0x0000000000100000, 0x00000000000FFFFF # HD(1048576, 1048575) = 21
     test_data_2: .dword 0x0000000000000001, 0x7FFFFFFFFFFFFFFE # HD(1, 9223372036854775806) = 63
     test_data_3: .dword 0x000000028370228F, 0x000000028370228F # HD(10795098767, 10795098767) = 0
-    msg_string: .string "\nHamming Distance="
+.section .rodata
+    msg1: .ascii "\nHamming Distance="
+    msg2: .ascii "\nCycle counts :"         
     
 .text
-main:
+
+_start1:
     addi sp, sp, -12
     
     # push pointers of test data onto the stack
@@ -20,10 +28,16 @@ main:
     addi s0, zero, 3    # s0 : number of test case
     addi s1, zero, 0    # s1 : test case counter
     addi s2, sp, 0      # s2 : points to test_data_1
-
+get_cycles_init:
+    csrr t1, cycleh
+    csrr s10, cycle
+    csrr t2, cycleh
+    bne t1, t2, get_cycles_init
 main_loop:
-    la a0, msg_string
-    li a7, 4            # print string
+    li a7, SYSWRITE     #"write" syscall
+    li a0, 1            #1 = standard output (stdout)
+    la a1, msg1   	 # load address of msg string
+    li a2, 18     	 # length of msg string
     ecall
     
     lw a0, 0(s2)        # a0 : pointer to the first data in test_data_1
@@ -31,17 +45,39 @@ main_loop:
     jal ra, hd_func
     
     # print the result #
-    li a7, 1            # print integer
-    ecall               # print result of hd_cal (which is in a0)
+    li a7, SYSINT	 #"printint" syscall
+    add a1, a0, x0      # address of string(move result of hd_cal to a1)
+    li a0, 1 		 #1 = standard output (stdout)
+
+    ecall               # print result of hd_cal
     
     addi s2, s2, 4      # s2 : points to next test_data
     addi s1, s1, 1      # counter++
     bne s1, s0, main_loop
     
-    addi sp, sp, 12
-    li a7, 10
+ get_cycles_end:
+    csrr t1, cycleh
+    csrr s11, cycle
+    csrr t2, cycleh
+    bne t1, t2, get_cycles_end
+    sub s11, s11, s10
+ # print the result #
+    li a7, SYSWRITE     #"write" syscall
+    li a0, 1            #1 = standard output (stdout)
+    la a1, msg2   	 # load address of msg string
+    li a2, 15     	 # length of msg string
     ecall
-
+    
+    li a7, SYSINT	 #"printint" syscall
+    add a1, s11, x0      # address of string(move result of hd_cal to a1)
+    li a0, 1 		 #1 = standard output (stdout)
+    ecall               # print result of get_cycles_end
+    
+    addi sp, sp, 12
+    li a0, 0		#0 signals success
+    li a7, SYSEXIT    # "exit" syscall
+    ecall
+	
 # hamming distance function
 hd_func:
     addi sp, sp, -36
@@ -62,14 +98,14 @@ hd_func:
     # get x0_digit
     lw a0, 0(s0)        # a0 : lower part of x0
     lw a1, 4(s0)        # a1 : higher part of x0
-    jal ra clz
+    jal ra, clz
     li s2, 64
     sub s2, s2, a0      # s2 : x0_digit (return value saved in a0)
 
     # get x1_digit
     lw a0, 0(s1)        # a0 : lower part of x1
     lw a1, 4(s1)        # a1 : higher part of x1
-    jal ra clz
+    jal ra, clz
     li s3, 64
     sub s3, s3, a0      # s3 : x1_digit (return value saved in a0)
     
@@ -83,7 +119,7 @@ hd_func:
     slt t0, s2, s3
     bne t0, zero, x1_larger
     mv s3, zero         # s3: hd counter
-    bgt s2, zero, hd_cal_loop
+    bgt s2, zero, hd_cal_xor
     
     # when digit is 0
     mv a0, s2            # save max_digit to a0
@@ -92,7 +128,7 @@ hd_func:
 x1_larger:
     mv s2, s3          # s2 : max_digit
     mv s3, zero        # s3: hd counter
-    bgt s2, zero, hd_cal_loop
+    bgt s2, zero, hd_cal_xor
     
     # when digit is 0
     mv a0, s2            # save max_digit to a0
@@ -115,28 +151,27 @@ hd_func_end:
 hd_cal_xor:
     xor s4, s4, s6
     xor s5, s5, s7	#c1=(s5 s4)
+    
 hd_cal_loop:
-    # when the current digit larger than 32
-    addi t2, zero, 32
-    bgt s2, t2, hd_getLSB_upper
-
     # hd_getLSB_lower : and with 1
     li t3, 0x00000001
     and t4, s4, t3
+    #and t5, s6, t3
     j hd_cal_shift
-
-hd_getLSB_upper:
-    # and with 1
-    li t3, 0x00000001
-    and t4, s5, t3
-    and t5, s7, t3
-
+    
 hd_cal_shift:
     # (s5 s4) = x >> 1
     srli t0, s4, 1
     slli t1, s5, 31
     or s4, t0, t1       # s4 >> 1
     srli s5, s5, 1      # s5 >> 1
+
+    # (s7 s6) = x >> 1
+    #srli t0, s6, 1
+    #slli t1, s7, 31
+    #or s6, t0, t1       # s6 >> 1
+    #srli s7, s7, 1      # s7 >> 1
+
     bne t4, t3, hd_check_loop
     addi s3, s3, 1
     
@@ -196,6 +231,7 @@ clz_count_ones:
     sub a1, a1, t1
     sub a1, a1, t3
 
+
     # x = ((x >> 2) & 0x3333333333333333) + (x & 0x3333333333333333); #
     srli t0, a0, 2
     slli t1, a1, 30
@@ -214,6 +250,7 @@ clz_count_ones:
     add a1, t1, t5
     add a1, a1, t3
 
+
     # x = ((x >> 4) + x) & 0x0f0f0f0f0f0f0f0f; #
     srli t0, a0, 4
     slli t1, a1, 28
@@ -228,6 +265,7 @@ clz_count_ones:
     li t2, 0x0f0f0f0f
     and a0, t0, t2
     and a1, t1, t2
+
 
     # x += (x >> 8); #
     srli t0, a0, 8
@@ -252,6 +290,7 @@ clz_count_ones:
     add a1, a1, t1
     add a1, a1, t3      # (a1 a0) += (t1 t0)
 
+
     # x += (x >> 32); #
     # (t1 t0) = x >> 32
     mv t0, a1
@@ -261,6 +300,7 @@ clz_count_ones:
     sltu t3, a0, t0     # t3 : carry bit
     add a1, a1, t1
     add a1, a1, t3      # (a1 a0) += (t1 t0)
+    
     
     # return (64 - (x & 0x7f));
     # a0 = (x & 0x7f)
