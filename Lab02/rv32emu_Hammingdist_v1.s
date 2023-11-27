@@ -119,7 +119,7 @@ hd_func:
     slt t0, s2, s3
     bne t0, zero, x1_larger
     mv s3, zero         # s3: hd counter
-    bgt s2, zero, hd_cal_xor
+    bgt s2, zero, hd_cal_loop
     
     # when digit is 0
     mv a0, s2            # save max_digit to a0
@@ -128,7 +128,7 @@ hd_func:
 x1_larger:
     mv s2, s3          # s2 : max_digit
     mv s3, zero        # s3: hd counter
-    bgt s2, zero, hd_cal_xor
+    bgt s2, zero, hd_cal_loop
     
     # when digit is 0
     mv a0, s2            # save max_digit to a0
@@ -148,15 +148,15 @@ hd_func_end:
     ret
 
 # hamming distance calculation (result save in a0, a1)
-hd_cal_xor:
-    xor s4, s4, s6
-    xor s5, s5, s7	#c1=(s5 s4)
-    
 hd_cal_loop:
+    # when the current digit larger than 32
+    #addi t2, zero, 32
+    #bgt s2, t2, hd_getLSB_upper
+
     # hd_getLSB_lower : and with 1
     li t3, 0x00000001
     and t4, s4, t3
-    #and t5, s6, t3
+    and t5, s6, t3
     j hd_cal_shift
     
 hd_cal_shift:
@@ -167,12 +167,12 @@ hd_cal_shift:
     srli s5, s5, 1      # s5 >> 1
 
     # (s7 s6) = x >> 1
-    #srli t0, s6, 1
-    #slli t1, s7, 31
-    #or s6, t0, t1       # s6 >> 1
-    #srli s7, s7, 1      # s7 >> 1
+    srli t0, s6, 1
+    slli t1, s7, 31
+    or s6, t0, t1       # s6 >> 1
+    srli s7, s7, 1      # s7 >> 1
 
-    bne t4, t3, hd_check_loop
+    beq t4, t5, hd_check_loop
     addi s3, s3, 1
     
 hd_check_loop:
